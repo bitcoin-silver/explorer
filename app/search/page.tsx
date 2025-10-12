@@ -15,7 +15,7 @@ export default function SearchPage() {
   const showNotification = useNotification();
 
   // Detect what type of search query it is
-  const detectQueryType = (query: string): 'address' | 'tx' | 'block' | 'unknown' => {
+  const detectQueryType = (query: string): 'address' | 'tx' | 'block' | 'hash' | 'unknown' => {
     query = query.trim();
 
     // Adressmuster für Bitcoin Silver + klassische Bitcoin-Formate
@@ -28,15 +28,18 @@ export default function SearchPage() {
 
     if (addressPatterns.some(r => r.test(query))) return 'address';
 
-    // Transaction ID (64 hex)
-    if (/^[a-fA-F0-9]{64}$/.test(query)) return 'tx';
-
-    // Block hash (64 hex, wenn nicht TX)
-    // Optional: hier kann man RPC prüfen, um tx vs block zu unterscheiden
-    if (/^[a-fA-F0-9]{64}$/.test(query)) return 'block';
-
-    // Blockhöhe (numeric)
+    // Block height (numeric)
     if (/^\d+$/.test(query)) return 'block';
+
+    // 64-character hex string - could be either transaction or block hash
+    // Block hashes typically start with multiple zeros, transactions rarely do
+    // We use a heuristic: if it starts with 4+ zeros, likely a block hash
+    if (/^[a-fA-F0-9]{64}$/.test(query)) {
+      if (/^0{4,}/.test(query)) {
+        return 'hash'; // Likely a block hash
+      }
+      return 'tx'; // Likely a transaction
+    }
 
     return 'unknown';
   };
@@ -65,6 +68,9 @@ export default function SearchPage() {
           router.push(`/tx/${query.trim()}`);
           break;
         case 'block':
+        case 'hash':
+          // Both block height and block hash go to /block/[height]
+          // The block page now handles both cases
           router.push(`/block/${query.trim()}`);
           break;
         default:
