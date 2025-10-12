@@ -65,28 +65,6 @@ async function getTopAddresses(limit: number = 100): Promise<AddressBalance[]> {
       .limit(limit)                   // Limit to top 100
       .toArray();
     
-    // Debugging code
-    const targetAddress = addressDocs.find(doc => doc.a_id === "TqExosWP37HtqVJiHwpWi1jBYpLwzAdptK");
-    if (targetAddress) {
-      console.log("DEBUG - Problem Address:", {
-        address: targetAddress.a_id,
-        rawBalance: targetAddress.balance,
-        numberBalance: Number(targetAddress.balance),
-        formattedBalance: formatBalance(Number(targetAddress.balance))
-      });
-      
-      // Check another address for comparison
-      const otherAddress = addressDocs.find(doc => doc.balance > 5000000);
-      if (otherAddress) {
-        console.log("DEBUG - Comparison Address:", {
-          address: otherAddress.a_id,
-          rawBalance: otherAddress.balance,
-          numberBalance: Number(otherAddress.balance),
-          formattedBalance: formatBalance(Number(otherAddress.balance))
-        });
-      }
-    }
-    
     // Map to the required format
     return addressDocs.map(doc => ({
       address: doc.a_id,
