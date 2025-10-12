@@ -6,9 +6,6 @@ import path from 'path';
 // Set this in your .env file
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'your-secure-password-here';
 
-// Log the loaded password (for debugging, remove in production)
-console.log('API loaded with password:', ADMIN_PASSWORD);
-
 // Simple password authentication
 function isAuthorized(request: NextRequest): boolean {
   const authHeader = request.headers.get('Authorization');
