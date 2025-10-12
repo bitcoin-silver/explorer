@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { getBlock } from '@/lib/blockchain-api';
+import { getBlock, getBlockByHash } from '@/lib/blockchain-api';
 import { formatDistance, format } from 'date-fns';
 import Link from 'next/link';
 
@@ -38,15 +38,27 @@ interface BlockWithTransactions {
 
 export default async function BlockPage({ params }: { params: Promise<{ height: string }> }) {
   const resolvedParams = await params;
-  const blockHeight = parseInt(resolvedParams.height, 10);
-  
-  if (isNaN(blockHeight)) {
-    notFound();
+  const heightOrHash = resolvedParams.height;
+
+  // Detect if it's a block hash (64 hex characters) or block height (numeric)
+  const isHash = /^[a-fA-F0-9]{64}$/.test(heightOrHash);
+
+  let block: BlockWithTransactions | null;
+
+  if (isHash) {
+    // It's a block hash
+    block = await getBlockByHash(heightOrHash) as BlockWithTransactions;
+  } else {
+    // It's a block height
+    const blockHeight = parseInt(heightOrHash, 10);
+
+    if (isNaN(blockHeight)) {
+      notFound();
+    }
+
+    block = await getBlock(blockHeight) as BlockWithTransactions;
   }
-  
-  // Use type assertion to fix block type issues
-  const block = await getBlock(blockHeight) as BlockWithTransactions;
-  
+
   if (!block) {
     notFound();
   }
