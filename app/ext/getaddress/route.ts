@@ -2,12 +2,18 @@ import { NextResponse } from 'next/server';
 import clientPromise from '@/lib/mongodb';
 import { type NextRequest } from 'next/server';
 
-// Define an interface for the transaction input
+// Define interfaces for transaction inputs and outputs
 interface TxInput {
   address: string;
+  addresses?: string;
   amount?: number;
   txid?: string;
   vout?: number;
+}
+
+interface TxOutput {
+  addresses: string;
+  amount: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -53,12 +59,31 @@ export async function GET(request: NextRequest) {
       received: addressData.received || 0,
       sent: addressData.sent || 0,
       txCount: addressData.txs?.length || 0,
-      transactions: txs.map(tx => ({
-        txid: tx.txid,
-        timestamp: tx.timestamp,
-        amount: tx.total,
-        type: tx.vin.some((vin: TxInput) => vin.address === addressHash) ? 'sent' : 'received'
-      }))
+      transactions: txs.map(tx => {
+        // Calculate total inputs from the queried address
+        const inputsFromAddress = tx.vin
+          .filter((vin: TxInput) => vin.address === addressHash || vin.addresses === addressHash)
+          .reduce((sum: number, vin: TxInput) => sum + (vin.amount || 0), 0);
+
+        // Calculate total outputs to the queried address
+        const outputsToAddress = tx.vout
+          .filter((vout: TxOutput) => vout.addresses === addressHash)
+          .reduce((sum: number, vout: TxOutput) => sum + (vout.amount || 0), 0);
+
+        // Calculate net effect on the address
+        const netAmount = outputsToAddress - inputsFromAddress;
+
+        // Determine type and amount
+        const type = netAmount >= 0 ? 'received' : 'sent';
+        const amount = Math.abs(netAmount);
+
+        return {
+          txid: tx.txid,
+          timestamp: tx.timestamp,
+          amount: amount,
+          type: type
+        };
+      })
     });
   } catch (error) {
     console.error('Error fetching address data:', error);
