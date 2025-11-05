@@ -17,10 +17,7 @@ import {
   TransactionOutput as RPCTransactionOutput
 } from 'bitcoin-core';
 
-interface AddressBalanceResult {
-  balance: string | number;
-  received: string | number;
-}
+interface AddressBalanceResult { balance: string | number; received: string | number; }
 
 // --- CLI ---
 let mode = 'update';
@@ -29,7 +26,7 @@ let database = 'index';
 function usage() {
   console.log(`Usage: tsx scripts/sync.ts [database] [mode]`);
   console.log(`database: index | market`);
-  console.log(`mode: update | check | reindex | reindex-rich | rebuild-address <address> | rebuild-all-addresses`);
+  console.log(`mode: update | check | reindex | reindex-rich | rebuild-address <address> | rebuild-all-addresses | range <start> <end>`);
   process.exit(0);
 }
 
@@ -124,12 +121,17 @@ interface InputAddressAmount { addresses: string; amount: number; }
 interface OutputAddressAmount { addresses: string; amount: number; }
 
 function extractAddress(vout: RPCTransactionOutput): string {
-  // Support P2PKH, P2SH, Bech32, and Bitcoin Silver prefixes (B / bs1)
   if (vout.scriptPubKey.addresses?.length) return vout.scriptPubKey.addresses[0];
   if ((vout.scriptPubKey as any).address) return (vout.scriptPubKey as any).address;
+
+  const hex = vout.scriptPubKey.hex || '';
+  const type = vout.scriptPubKey.type || 'unknown';
   const asm = vout.scriptPubKey.asm || '';
-  if (/^(B|bs1)[a-zA-Z0-9]{20,50}$/.test(asm)) return asm;
-  return 'unknown';
+
+  const shortHex = hex.slice(0, 12);
+  const shortAsm = asm.length > 20 ? asm.slice(0, 20) + '…' : asm;
+
+  return `script:${type}${shortHex ? `:${shortHex}` : ''}${shortAsm ? `:${shortAsm}` : ''}`;
 }
 
 async function processTransaction(db: Db, tx: RPCTransaction, block: RPCBlock) {
@@ -137,20 +139,45 @@ async function processTransaction(db: Db, tx: RPCTransaction, block: RPCBlock) {
 
   const inputs: InputAddressAmount[] = [];
   for (const vin of tx.vin) {
-    if (vin.coinbase) { inputs.push({ addresses: 'coinbase', amount: 0 }); continue; }
+    if (vin.coinbase) { 
+      inputs.push({ addresses: 'coinbase', amount: 0 }); 
+      continue; 
+    }
     try {
-      if (vin.txid == null || vin.vout == null) { inputs.push({ addresses: 'unknown', amount: 0 }); continue; }
-      const vinTx = await client.getRawTransaction(vin.txid, true) as RPCTransaction;
+      if (vin.txid == null || vin.vout == null) { 
+        inputs.push({ addresses: 'unknown', amount: 0 }); 
+        continue; 
+      }
+
+      let vinTx: RPCTransaction | null = null;
+      for (let i = 0; i < 3; i++) {
+        try {
+          vinTx = await client.getRawTransaction(vin.txid, true) as RPCTransaction;
+          break;
+        } catch (e) {
+          if (i === 2) throw e;
+          await new Promise(res => setTimeout(res, 500));
+        }
+      }
+
+      if (!vinTx || !vinTx.vout[vin.vout]) {
+        inputs.push({ addresses: `script:unknown`, amount: 0 });
+        continue;
+      }
+
       const vinOut = vinTx.vout[vin.vout];
       inputs.push({ addresses: extractAddress(vinOut), amount: Number(vinOut.value) || 0 });
-    } catch { inputs.push({ addresses: 'unknown', amount: 0 }); }
+
+    } catch (e) {
+      console.warn(`Failed to process vin ${vin.txid}:${vin.vout}`, e);
+      inputs.push({ addresses: `script:unknown`, amount: 0 });
+    }
   }
 
   const outputs: OutputAddressAmount[] = tx.vout
     .filter(v => !(v.value === 0 && v.scriptPubKey.type === 'nulldata'))
     .map(v => ({ addresses: extractAddress(v), amount: Number(v.value) }));
 
-  // --- Fee Calculation ---
   const inputTotal = inputs.reduce((sum, i) => sum + i.amount, 0);
   const outputTotal = outputs.reduce((sum, o) => sum + o.amount, 0);
   const fee = tx.vin[0]?.coinbase ? 0 : Math.max(0, inputTotal - outputTotal);
@@ -172,37 +199,65 @@ async function processTransaction(db: Db, tx: RPCTransaction, block: RPCBlock) {
 // --- ADDRESS BALANCES ---
 async function updateAddressesFromTx(db: Db, txid: string, inputs: InputAddressAmount[], outputs: OutputAddressAmount[], blockHeight: number) {
   const impacts: Record<string, { sent: number, received: number }> = {};
+  const inputAddresses = new Set(inputs.filter(i => i.addresses !== 'coinbase' && i.addresses !== 'unknown').map(i => i.addresses));
+
+  const addresstxsOps: any[] = [];
+  const addressesOps: any[] = [];
 
   for (const out of outputs) {
     if (out.addresses === 'unknown') continue;
+
+    const isChange = inputAddresses.has(out.addresses);
     if (!impacts[out.addresses]) impacts[out.addresses] = { sent: 0, received: 0 };
     impacts[out.addresses].received += out.amount;
-    await db.collection('addresstxs').insertOne({ a_id: out.addresses, txid, blockindex: blockHeight, amount: out.amount, type: 'vout' });
+
+    if (!isChange) {
+      addresstxsOps.push({ insertOne: { document: { a_id: out.addresses, txid, blockindex: blockHeight, amount: out.amount, type: 'vout' } } });
+    }
   }
 
   for (const inp of inputs) {
     if (inp.addresses === 'coinbase' || inp.addresses === 'unknown') continue;
     if (!impacts[inp.addresses]) impacts[inp.addresses] = { sent: 0, received: 0 };
     impacts[inp.addresses].sent += inp.amount;
-    await db.collection('addresstxs').insertOne({ a_id: inp.addresses, txid, blockindex: blockHeight, amount: -inp.amount, type: 'vin' });
+
+    addresstxsOps.push({ insertOne: { document: { a_id: inp.addresses, txid, blockindex: blockHeight, amount: -inp.amount, type: 'vin' } } });
   }
 
   for (const [addr, imp] of Object.entries(impacts)) {
-    await db.collection('addresses').updateOne(
-      { a_id: addr },
-      { $inc: { balance: imp.received - imp.sent, received: imp.received, sent: imp.sent }, $push: { txs: txid }, $setOnInsert: { a_id: addr } },
-      { upsert: true }
-    );
+    addressesOps.push({
+      updateOne: {
+        filter: { a_id: addr },
+        update: { 
+          $inc: { balance: imp.received - imp.sent, received: imp.received, sent: imp.sent }, 
+          $push: { txs: txid },
+          $setOnInsert: { a_id: addr }
+        },
+        upsert: true
+      }
+    });
   }
+
+  try { if (addresstxsOps.length) await db.collection('addresstxs').bulkWrite(addresstxsOps, { ordered: false }); } 
+  catch (e) { console.error('Bulk addresstxs failed:', e); }
+
+  try { if (addressesOps.length) await db.collection('addresses').bulkWrite(addressesOps, { ordered: false }); } 
+  catch (e) { console.error('Bulk addresses failed:', e); }
 }
 
 // --- VERIFY BLOCK ---
 async function verifyBlockTransactions(db: Db, height: number, blockHash: string) {
   const block = await client.getBlock(blockHash, 2) as RPCBlock;
   const txids = block.tx.map(tx => typeof tx === 'string' ? tx : tx.txid);
+
   const existing = await db.collection('txs').find({ blockhash: blockHash }).project<{ txid: string }>({ txid: 1 }).toArray();
-  const missing = txids.filter(id => !existing.map(e => e.txid).includes(id));
-  for (const txid of missing) await processTransaction(db, await client.getRawTransaction(txid, true) as RPCTransaction, block);
+  const existingSet = new Set(existing.map(e => e.txid));
+
+  const missing = txids.filter(id => !existingSet.has(id));
+  for (const txid of missing) {
+    const fullTx = await client.getRawTransaction(txid, true) as RPCTransaction;
+    await processTransaction(db, fullTx, block);
+  }
 }
 
 // --- RICHLIST ---
@@ -230,13 +285,8 @@ async function updateStats(db: Db) {
 
 async function calculateSupplyFromBlocks(db: Db) {
   const res = await db.collection('txs').aggregate([
-    // Nur coinbase-Transaktionen (erster Input = coinbase)
     { $match: { 'vin.0.addresses': 'coinbase' } },
-    
-    // Füge total-Wert als Zahl hinzu (falls als String gespeichert)
     { $addFields: { totalNum: { $convert: { input: "$total", to: "double", onError: 0, onNull: 0 } } } },
-
-    // Summiere alle Totalwerte dieser Coinbase-Transaktionen
     { $group: { _id: null, totalSupply: { $sum: "$totalNum" } } }
   ]).toArray();
 

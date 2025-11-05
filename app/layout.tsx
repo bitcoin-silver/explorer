@@ -1,7 +1,5 @@
 import '@/app/globals.css';
 import { Inter } from 'next/font/google';
-import { Layers, Users } from 'lucide-react';
-import { getInfo, getNetworkInfo } from '@/lib/blockchain';
 import { NavbarWrapper } from '@/components/navbar';
 import { NotificationProvider } from '@/components/ui/sooner';
 
@@ -22,12 +20,6 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Fetch blockchain info and network info for the footer
-  const [blockchainInfo, networkInfo] = await Promise.all([
-    getInfo(),
-    getNetworkInfo()
-  ]);
-
   return (
     <html lang="en" className="dark">
       <body className={inter.className}>
@@ -51,12 +43,9 @@ export default async function RootLayout({
                     </div>
                     <div className="flex items-center space-x-6">
                       <div className="flex items-center">
-                        <Layers className="h-5 w-5 mr-2 text-muted-foreground" />
-                        <span>Block Height: {blockchainInfo.blocks.toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center">
-                        <Users className="h-5 w-5 mr-2 text-muted-foreground" />
-                        <span>Connections: {networkInfo.connections}</span>
+                        <span>
+                          Built with ⚡ by the <a href="https://bitcoinsilver.top" target="_blank">Bitcoin Silver</a> community
+                        </span>
                       </div>
                     </div>
                   </div>

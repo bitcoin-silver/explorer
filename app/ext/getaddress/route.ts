@@ -39,12 +39,12 @@ export async function GET(request: NextRequest) {
     const txs = await db.collection('txs')
       .find({
         $or: [
-          { 'vin.address': addressHash },
-          { 'vout.address': addressHash }
+          { 'vin.addresses': addressHash },
+          { 'vout.addresses': addressHash }
         ]
       })
       .sort({ timestamp: -1 })
-      .limit(10)
+      .limit(1000)
       .toArray();
     
     return NextResponse.json({
