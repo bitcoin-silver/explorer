@@ -207,13 +207,12 @@ async function updateAddressesFromTx(db: Db, txid: string, inputs: InputAddressA
   for (const out of outputs) {
     if (out.addresses === 'unknown') continue;
 
-    const isChange = inputAddresses.has(out.addresses);
     if (!impacts[out.addresses]) impacts[out.addresses] = { sent: 0, received: 0 };
     impacts[out.addresses].received += out.amount;
 
-    if (!isChange) {
-      addresstxsOps.push({ insertOne: { document: { a_id: out.addresses, txid, blockindex: blockHeight, amount: out.amount, type: 'vout' } } });
-    }
+    // Always record outputs in addresstxs (including change outputs)
+    // This is needed for correct transaction amount calculations
+    addresstxsOps.push({ insertOne: { document: { a_id: out.addresses, txid, blockindex: blockHeight, amount: out.amount, type: 'vout' } } });
   }
 
   for (const inp of inputs) {
