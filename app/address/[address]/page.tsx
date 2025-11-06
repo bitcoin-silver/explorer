@@ -121,7 +121,20 @@ export default async function AddressPage({
     
     return `/address/${address}?${params.toString()}`;
   };
-  
+
+  // Helper function to format amounts with proper decimal places
+  function formatAmount(amount: number): string {
+    // If it's a whole number, don't show decimals
+    if (Math.floor(amount) === amount) {
+      return amount.toLocaleString();
+    }
+    // Otherwise show up to 8 decimal places (cryptocurrency precision)
+    return amount.toLocaleString(undefined, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 8
+    });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -206,24 +219,24 @@ export default async function AddressPage({
               <div className="flex items-center">
                 <Banknote className="h-4 w-4 mr-2 text-muted-foreground" />
                 <div className="font-medium text-xl">
-                  {(addressData.balance || 0).toLocaleString()} {process.env.NEXT_PUBLIC_COIN_SYMBOL || 'TENZ'}
+                  {formatAmount(addressData.balance || 0)} {process.env.NEXT_PUBLIC_COIN_SYMBOL || 'TENZ'}
                 </div>
               </div>
             </div>
-            
+
             <div>
               <h3 className="text-sm font-medium text-muted-foreground mb-1">Total Received</h3>
               <div className="flex items-center">
                 <Download className="h-4 w-4 mr-2 text-muted-foreground" />
-                <div>{(addressData.received || 0).toLocaleString()} {process.env.NEXT_PUBLIC_COIN_SYMBOL || 'TENZ'}</div>
+                <div>{formatAmount(addressData.received || 0)} {process.env.NEXT_PUBLIC_COIN_SYMBOL || 'TENZ'}</div>
               </div>
             </div>
-            
+
             <div>
               <h3 className="text-sm font-medium text-muted-foreground mb-1">Total Sent</h3>
               <div className="flex items-center">
                 <Upload className="h-4 w-4 mr-2 text-muted-foreground" />
-                <div>{(addressData.sent || 0).toLocaleString()} {process.env.NEXT_PUBLIC_COIN_SYMBOL || 'TENZ'}</div>
+                <div>{formatAmount(addressData.sent || 0)} {process.env.NEXT_PUBLIC_COIN_SYMBOL || 'TENZ'}</div>
               </div>
             </div>
           </div>
@@ -288,7 +301,7 @@ export default async function AddressPage({
                     </TableCell>
                     <TableCell className="text-right">
                       <span className={`font-medium ${tx.amount > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()} {process.env.NEXT_PUBLIC_COIN_SYMBOL}
+                        {tx.amount > 0 ? '+' : ''}{formatAmount(tx.amount)} {process.env.NEXT_PUBLIC_COIN_SYMBOL}
                       </span>
                     </TableCell>
                   </TableRow>
