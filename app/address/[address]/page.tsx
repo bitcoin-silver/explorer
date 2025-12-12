@@ -184,20 +184,6 @@ export default async function AddressPage({
               </CardDescription>
             </div>
           </div>
-          
-          {/* Mobile-only QR code display */}
-          <div className="flex justify-center md:hidden mt-4">
-            <div className="bg-white border border-border p-2 rounded-md">
-              <Image 
-                src={`/api/qr?address=${address}`}
-                alt={`QR Code for ${address}`} 
-                width={120}
-                height={120}
-                className="h-auto w-auto"
-                priority
-              />
-            </div>
-          </div>
         </CardHeader>
         
         <CardContent>
