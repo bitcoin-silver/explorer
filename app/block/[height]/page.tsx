@@ -6,7 +6,7 @@ import { getBlock, getBlockByHash } from '@/lib/blockchain-api';
 import { formatDistance, format } from 'date-fns';
 import Link from 'next/link';
 
-// Define the Transaction interface that was missing
+// Transaction interface
 interface Transaction {
   txid: string;
   vin: {
@@ -20,7 +20,7 @@ interface Transaction {
   total: number;
 }
 
-// Create an interface for your block structure
+// Block interface
 interface BlockWithTransactions {
   hash: string;
   height: number;
@@ -36,38 +36,49 @@ interface BlockWithTransactions {
   next_hash?: string;
 }
 
+// Type guard für Fehlerobjekte mit code
+function isRpcError(err: unknown): err is { code: number } {
+  return typeof err === 'object' && err !== null && 'code' in err && typeof (err as Record<string, unknown>).code === 'number';
+}
+
 export default async function BlockPage({ params }: { params: Promise<{ height: string }> }) {
   const resolvedParams = await params;
   const heightOrHash = resolvedParams.height;
 
-  // Detect if it's a block hash (64 hex characters) or block height (numeric)
   const isHash = /^[a-fA-F0-9]{64}$/.test(heightOrHash);
 
-  let block: BlockWithTransactions | null;
+  let block: BlockWithTransactions | null = null;
 
   if (isHash) {
-    // It's a block hash
-    block = await getBlockByHash(heightOrHash) as BlockWithTransactions;
-  } else {
-    // It's a block height
-    const blockHeight = parseInt(heightOrHash, 10);
-
-    if (isNaN(blockHeight)) {
+    try {
+      block = (await getBlockByHash(heightOrHash)) as BlockWithTransactions;
+    } catch (err: unknown) {
+      console.warn(`Error fetching block by hash:`, err);
       notFound();
     }
+  } else {
+    const blockHeight = parseInt(heightOrHash, 10);
+    if (isNaN(blockHeight)) notFound();
 
-    block = await getBlock(blockHeight) as BlockWithTransactions;
+    try {
+      block = (await getBlock(blockHeight)) as BlockWithTransactions;
+    } catch (err: unknown) {
+      if (isRpcError(err) && err.code === -8) {
+        // Block height out of range
+        notFound();
+      } else {
+        console.error(`Unexpected error fetching block ${blockHeight}:`, err);
+        throw err;
+      }
+    }
   }
 
-  if (!block) {
-    notFound();
-  }
-  
-  // Safely handle timestamp which might be undefined
+  if (!block) notFound();
+
   const timestamp = new Date((block.timestamp || 0) * 1000);
   const formattedDate = format(timestamp, 'PPpp');
   const timeAgo = formatDistance(timestamp, new Date(), { addSuffix: true });
-  
+
   return (
     <div className="container py-8 space-y-6">
       <div className="flex justify-between items-center">
@@ -83,7 +94,7 @@ export default async function BlockPage({ params }: { params: Promise<{ height: 
           </Link>
         </div>
       </div>
-      
+
       <Card>
         <CardHeader>
           <CardTitle>Block Information</CardTitle>
@@ -95,39 +106,32 @@ export default async function BlockPage({ params }: { params: Promise<{ height: 
                 <div className="text-sm font-medium text-muted-foreground">Block Hash</div>
                 <div className="font-mono break-all">{block.hash}</div>
               </div>
-              
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Timestamp</div>
                 <div>{formattedDate} ({timeAgo})</div>
               </div>
-              
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Transactions</div>
                 <div>{block.txs?.length || 0} transactions</div>
               </div>
-              
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Block Reward</div>
                 <div>{getBlockReward(block)} {process.env.NEXT_PUBLIC_COIN_SYMBOL}</div>
               </div>
             </div>
-            
             <div className="space-y-4">
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Size</div>
                 <div>{block.size?.toLocaleString() || 0} bytes</div>
               </div>
-              
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Difficulty</div>
                 <div>{block.difficulty?.toLocaleString() || 0}</div>
               </div>
-              
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Nonce</div>
                 <div>{block.nonce || 0}</div>
               </div>
-              
               <div>
                 <div className="text-sm font-medium text-muted-foreground">Merkle Root</div>
                 <div className="font-mono truncate">{block.merkle}</div>
@@ -136,7 +140,7 @@ export default async function BlockPage({ params }: { params: Promise<{ height: 
           </div>
         </CardContent>
       </Card>
-      
+
       <Card>
         <CardHeader>
           <CardTitle>Transactions</CardTitle>
@@ -184,12 +188,9 @@ export default async function BlockPage({ params }: { params: Promise<{ height: 
 
 // Helper functions
 function getBlockReward(block: BlockWithTransactions): number {
-  // Find the coinbase transaction (first transaction in the block)
   const coinbaseTx = block.transactions?.find(tx => 
     tx.vin?.some(input => input.addresses === 'coinbase')
   );
-  
-  // Return the total output amount from the coinbase transaction
   return coinbaseTx?.total || 0;
 }
 

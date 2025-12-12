@@ -1,73 +1,61 @@
+// app/blocks/page.tsx
 import { Metadata } from "next";
-
 import clientPromise from "@/lib/mongodb";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from '@/components/ui/table';
-import { formatNumber, timeAgo } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import { Clock, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
-import { Block } from '@/lib/models';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatNumber, timeAgo } from "@/lib/utils";
+import Link from "next/link";
+import { Clock, ChevronLeft, ChevronRight, Layers } from "lucide-react";
+import { Block } from "@/lib/models";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
   title: `Blocks | ${process.env.NEXT_PUBLIC_COIN_NAME} Explorer`,
   description: `Browse all blocks on the ${process.env.NEXT_PUBLIC_COIN_NAME} blockchain`,
 };
 
+export const revalidate = 0; // Immer aktuell
+
+interface Pagination {
+  page: number;
+  limit: number;
+  totalPages: number;
+  totalItems: number;
+}
+
 async function getBlocks(page: number = 1, limit: number = 25) {
   const client = await clientPromise;
   const db = client.db();
-  
-  // Calculate pagination
+
   const skip = (page - 1) * limit;
-  
-  // Get total count for pagination
-  const totalBlocks = await db.collection('blocks').countDocuments({});
-  const totalPages = Math.ceil(totalBlocks / limit);
-  
-  // Get blocks with pagination
-  const blocks = await db.collection('blocks')
+
+  const totalItems = await db.collection("blocks").countDocuments();
+  const totalPages = Math.ceil(totalItems / limit);
+
+  const blocks = await db
+    .collection("blocks")
     .find({})
-    .sort({ height: -1 }) // Sort by block height descending (newest first)
+    .sort({ height: -1 })
     .skip(skip)
     .limit(limit)
     .toArray() as Block[];
-    
-  return {
-    blocks,
-    pagination: {
-      page,
-      limit,
-      totalPages,
-      totalItems: totalBlocks
-    }
-  };
+
+  return { blocks, pagination: { page, limit, totalPages, totalItems } };
 }
 
-// Use the more specific type-checking bypass
-// @ts-expect-error - Next.js 15 type issue with page props
-export default async function BlocksPage(props) {
-  // Get the searchParams from props
-  const { searchParams = {} } = props;
-  
-  // Parse query parameters with fallbacks
-  const page = parseInt(searchParams?.page as string) || 1;
-  
-  // Get blocks with pagination
+export default async function BlocksPage({ searchParams }: { searchParams?: { page?: string } }) {
+  const page = Math.max(parseInt(searchParams?.page || "1", 10), 1);
   const { blocks, pagination } = await getBlocks(page);
-  
-  // Function to create pagination URLs
-  const createPageUrl = (pageNum: number) => {
-    return `/blocks?page=${pageNum}`;
-  };
-  
+
+  const createPageUrl = (pageNum: number) => `/blocks?page=${pageNum}`;
+
   return (
     <div className="space-y-6">
       <div>
@@ -76,7 +64,7 @@ export default async function BlocksPage(props) {
           Browse all blocks on the {process.env.NEXT_PUBLIC_COIN_NAME} blockchain
         </p>
       </div>
-      
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center">
@@ -115,73 +103,41 @@ export default async function BlocksPage(props) {
               ))}
             </TableBody>
           </Table>
-          
-          {/* Pagination controls */}
+
+          {/* Pagination */}
           {pagination.totalPages > 1 && (
             <div className="flex items-center justify-center space-x-2 mt-6">
-              {/* First page button */}
-              {page > 1 ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(1)}>
-                    <ChevronLeft className="h-4 w-4" />
-                    <ChevronLeft className="h-4 w-4 -ml-2" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
+              <Link href={createPageUrl(1)}>
+                <Button variant="outline" size="sm" disabled={page === 1}>
                   <ChevronLeft className="h-4 w-4" />
                   <ChevronLeft className="h-4 w-4 -ml-2" />
                 </Button>
-              )}
-              
-              {/* Previous button */}
-              {page > 1 ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(page - 1)}>
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Prev
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
+              </Link>
+
+              <Link href={createPageUrl(Math.max(page - 1, 1))}>
+                <Button variant="outline" size="sm" disabled={page === 1}>
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Prev
                 </Button>
-              )}
-              
+              </Link>
+
               <div className="text-sm">
                 Page {page} of {pagination.totalPages}
               </div>
-              
-              {/* Next button */}
-              {page < pagination.totalPages ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(page + 1)}>
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
+
+              <Link href={createPageUrl(Math.min(page + 1, pagination.totalPages))}>
+                <Button variant="outline" size="sm" disabled={page === pagination.totalPages}>
                   Next
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
-              )}
-              
-              {/* Last page button */}
-              {page < pagination.totalPages ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(pagination.totalPages)}>
-                    <ChevronRight className="h-4 w-4" />
-                    <ChevronRight className="h-4 w-4 -ml-2" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled>
+              </Link>
+
+              <Link href={createPageUrl(pagination.totalPages)}>
+                <Button variant="outline" size="sm" disabled={page === pagination.totalPages}>
                   <ChevronRight className="h-4 w-4" />
                   <ChevronRight className="h-4 w-4 -ml-2" />
                 </Button>
-              )}
+              </Link>
             </div>
           )}
         </CardContent>

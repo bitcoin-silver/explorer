@@ -2,27 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 import { existsSync } from 'fs';
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
+import { timingSafeEqual, createHash } from 'crypto';
 
-// Set this in your .env file
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'your-secure-password-here';
+// Set this in your .env file - REQUIRED for security
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-// Simple password authentication
+if (!ADMIN_PASSWORD) {
+  throw new Error('ADMIN_PASSWORD environment variable is required');
+}
+
+// Hash the password for comparison (using timing-safe comparison)
+const passwordHash = createHash('sha256').update(ADMIN_PASSWORD).digest('hex');
+
+// Timing-safe password authentication
 function isAuthorized(request: NextRequest): boolean {
   const authHeader = request.headers.get('Authorization');
-  console.log("Auth header received:", authHeader);
   
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return false;
   }
   
   const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-  console.log("Comparing tokens:", { 
-    received: token, 
-    expected: ADMIN_PASSWORD,
-    match: token === ADMIN_PASSWORD 
-  });
+  const tokenHash = createHash('sha256').update(token).digest('hex');
   
-  return token === ADMIN_PASSWORD;
+  try {
+    // Use timing-safe comparison to prevent timing attacks
+    return timingSafeEqual(Buffer.from(tokenHash), Buffer.from(passwordHash));
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -87,29 +95,60 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   
-  const { address, data } = await request.json();
-  
-  // Validate input
-  if (!address || !data || !data.label || !data.type) {
-    return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
-  }
-  
-  // Validate address format
-  if (!/^[a-zA-Z0-9]{26,35}$/.test(address)) {
-    return NextResponse.json({ error: 'Invalid address format' }, { status: 400 });
-  }
-  
-  // Escape data to prevent breaking file
-  const safeLabel = (data.label || '').replace(/"/g, '\\"');
-  const safeDesc = (data.description || '').replace(/"/g, '\\"');
-  
   try {
-    // Read current file
+    const { address, data } = await request.json();
+    
+    // Validate input
+    if (!address || !data || !data.label || !data.type) {
+      return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
+    }
+    
+    // Strict address format validation (Bitcoin address format)
+    // Only alphanumeric characters, typical length 26-35
+    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address) && 
+        !/^bc1[a-z0-9]{39,59}$/.test(address)) {
+      return NextResponse.json({ error: 'Invalid address format' }, { status: 400 });
+    }
+    
+    // Validate type enum
+    const validTypes = ['developer', 'exchange', 'funding', 'team', 'foundation', 'other'];
+    if (!validTypes.includes(data.type)) {
+      return NextResponse.json({ error: 'Invalid address type' }, { status: 400 });
+    }
+    
+    // Validate and sanitize string fields
+    const sanitizeString = (str: string, maxLength: number = 255): string => {
+      if (typeof str !== 'string') return '';
+      return str.slice(0, maxLength)
+        .replace(/[<>\"'`]/g, '') // Remove potentially dangerous characters
+        .trim();
+    };
+    
+    const safeLabel = sanitizeString(data.label, 100);
+    const safeDesc = sanitizeString(data.description || '', 500);
+    
+    if (!safeLabel) {
+      return NextResponse.json({ error: 'Invalid label' }, { status: 400 });
+    }
+    
+    // Ensure file is in correct directory (path traversal prevention)
     const filePath = path.join(process.cwd(), 'config', 'known-addresses.ts');
-    let fileContent = await readFile(filePath, 'utf8');
+    const resolvedPath = path.resolve(filePath);
+    const allowedDir = path.resolve(path.join(process.cwd(), 'config'));
+    
+    if (!resolvedPath.startsWith(allowedDir)) {
+      return NextResponse.json({ error: 'Invalid file path' }, { status: 400 });
+    }
+    
+    // Read current file
+    let fileContent = await readFile(resolvedPath, 'utf8');
+    
+    // Escape quotes to prevent code injection
+    const escapedLabel = safeLabel.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const escapedDesc = safeDesc.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     
     // Create the new entry with escaped values
-    const newEntry = `  "${address}": {\n    label: "${safeLabel}",\n    description: "${safeDesc}",\n    type: "${data.type}",\n    verified: ${data.verified || false}\n  },\n`;
+    const newEntry = `  "${address}": {\n    label: "${escapedLabel}",\n    description: "${escapedDesc}",\n    type: "${data.type}",\n    verified: ${data.verified === true ? 'true' : 'false'}\n  },\n`;
     
     const isUpdate = fileContent.includes(`"${address}":`);
     
@@ -122,7 +161,7 @@ export async function POST(request: NextRequest) {
       fileContent = fileContent.replace(/(const knownAddresses[^{]*{)/, `$1\n${newEntry}`);
     }
     
-    await writeFile(filePath, fileContent, 'utf8');
+    await writeFile(resolvedPath, fileContent, 'utf8');
     
     return NextResponse.json({ 
       success: true,
@@ -147,10 +186,24 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'No address provided' }, { status: 400 });
   }
   
+  // Strict address validation before processing
+  if (!/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address) && 
+      !/^bc1[a-z0-9]{39,59}$/.test(address)) {
+    return NextResponse.json({ error: 'Invalid address format' }, { status: 400 });
+  }
+  
   try {
-    // Read current file
+    // Ensure file is in correct directory (path traversal prevention)
     const filePath = path.join(process.cwd(), 'config', 'known-addresses.ts');
-    let fileContent = await readFile(filePath, 'utf8');
+    const resolvedPath = path.resolve(filePath);
+    const allowedDir = path.resolve(path.join(process.cwd(), 'config'));
+    
+    if (!resolvedPath.startsWith(allowedDir)) {
+      return NextResponse.json({ error: 'Invalid file path' }, { status: 400 });
+    }
+    
+    // Read current file
+    let fileContent = await readFile(resolvedPath, 'utf8');
     
     // Check if the address exists in the file
     if (!fileContent.includes(`"${address}":`)) {
@@ -166,7 +219,7 @@ export async function DELETE(request: NextRequest) {
     // Clean up any trailing commas in the object
     fileContent = fileContent.replace(/,(\s*})/g, '$1');
     
-    await writeFile(filePath, fileContent, 'utf8');
+    await writeFile(resolvedPath, fileContent, 'utf8');
     
     return NextResponse.json({ success: true });
   } catch (error) {

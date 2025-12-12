@@ -156,18 +156,6 @@ export default async function AddressPage({
       <Card>
         <CardHeader>
           <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
-            {/* QR Code - now in the header next to address */}
-            <div className="bg-white border border-border p-2 rounded-md mr-2 hidden md:block">
-              <Image 
-                src={`/api/qr?address=${address}`}
-                alt={`QR Code for ${address}`} 
-                width={90}
-                height={90}
-                className="h-auto w-auto"
-                priority
-              />
-            </div>
-            
             <div className="flex-1">
               <CardTitle className="flex items-center">
                 <Wallet className="h-5 w-5 mr-2" />

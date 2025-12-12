@@ -20,6 +20,8 @@ export const metadata: Metadata = {
   description: `Browse all transactions on the ${process.env.NEXT_PUBLIC_COIN_NAME} blockchain`,
 };
 
+export const revalidate = 0;
+
 async function getTransactions(page: number = 1, limit: number = 25) {
   const client = await clientPromise;
   const db = client.db();

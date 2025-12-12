@@ -1,6 +1,5 @@
 import clientPromise from './mongodb';
-import client from './blockchain';
-import { Block } from 'bitcoin-core';
+import { rpc } from './blockchain';
 
 // Define proper interfaces for the blockchain data
 interface RPCTransaction {
@@ -168,8 +167,8 @@ export async function getBlock(height: number) {
     }
     
     // If not found in DB, try to get from node
-    const blockHash = await client.getBlockHash(height);
-    const blockData = await client.getBlock(blockHash, 2) as Block; // Verbose with tx data
+    const blockHash = await rpc.getBlockHash(height);
+    const blockData = await rpc.getBlock(blockHash, 2) as any; // Verbose with tx data
     
     // Process and return block data
     return {
@@ -184,8 +183,8 @@ export async function getBlock(height: number) {
       merkle: blockData.merkleroot,
       prev_hash: blockData.previousblockhash,
       next_hash: blockData.nextblockhash,
-      txs: blockData.tx.map((tx) => typeof tx === 'string' ? tx : tx.txid),
-      transactions: blockData.tx.map((tx): FormattedTransaction => {
+      txs: blockData.tx.map((tx: any) => typeof tx === 'string' ? tx : tx.txid),
+      transactions: blockData.tx.map((tx: any): FormattedTransaction => {
         if (typeof tx === 'string') {
           return { txid: tx, vin: [], vout: [], total: 0 };
         }
@@ -251,21 +250,21 @@ export async function getTransaction(txid: string) {
     }
     
     // Fallback to RPC if not in database
-    const txData = await client.getRawTransaction(txid, true);
+    const txData = await rpc.getRawTransaction(txid, true);
     
     if (typeof txData === 'string') {
       return null;
     }
     
     // Format transaction data
-    const inputs = await Promise.all(txData.vin.map(async (input) => {
+    const inputs = await Promise.all(txData.vin.map(async (input: any) => {
       if (input.coinbase) {
         return { addresses: 'coinbase', amount: 0 };
       }
       
       try {
         if (input.txid && input.vout !== undefined) {
-          const vinTx = await client.getRawTransaction(input.txid, true);
+          const vinTx = await rpc.getRawTransaction(input.txid, true);
           
           if (typeof vinTx !== 'string' && 'vout' in vinTx) {
             const vinOut = vinTx.vout[input.vout];
@@ -282,18 +281,18 @@ export async function getTransaction(txid: string) {
       }
     }));
     
-    const outputs = txData.vout.map((output) => ({
+    const outputs = txData.vout.map((output: any) => ({
       addresses: output.scriptPubKey.addresses?.[0] || 'unknown',
       amount: Number(output.value) || 0
     }));
     
-    const total = outputs.reduce((sum, output) => sum + output.amount, 0);
+    const total = outputs.reduce((sum: number, output: any) => sum + output.amount, 0);
     
     // Get block info if available
     let blockData = null;
     if (txData.blockhash) {
       blockData = await db.collection('blocks').findOne({ hash: txData.blockhash }) || 
-                  await client.getBlock(txData.blockhash);
+                  await rpc.getBlock(txData.blockhash);
     }
     
     return {
@@ -440,20 +439,31 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
     const db = mongo.db();
 
     // Hole die aktuellen Blockchain-Daten vom Node
-    const info = await client.getBlockchainInfo();
+    const info = await rpc.getBlockchainInfo();
+    console.log('Blockchain info:', info);
 
     // Hole die Netzwerk-Hashrate
-    const networkHashPs = await client.command('getnetworkhashps') as number;
+    let networkHashPs = 0;
+    try {
+      networkHashPs = await rpc.getNetworkHashPs() as number;
+    } catch (e) {
+      // Fallback: berechne aus difficulty
+      networkHashPs = (info.difficulty || 0) * Math.pow(2, 32) / 60;
+    }
+    console.log('Network hashps:', networkHashPs);
 
     // Hole die Coin Supply aus der MongoDB stats-Collection
-    const statsDoc = await db.collection('stats').findOne({ coin: process.env.NEXT_PUBLIC_COIN_SYMBOL });
+    const coinSymbol = process.env.NEXT_PUBLIC_COIN_SYMBOL || 'BTCS';
+    console.log('Looking for coin symbol:', coinSymbol);
+    const statsDoc = await db.collection('stats').findOne({ coin: coinSymbol });
+    console.log('Stats doc found:', statsDoc);
     const moneysupply = statsDoc?.supply || 0;
 
     return {
       blocks: info.blocks,
       difficulty: info.difficulty,
       networkhashps: networkHashPs,
-      moneysupply,  // jetzt korrekt aus DB
+      moneysupply,
       chain: info.chain
     };
   } catch (error) {
@@ -472,8 +482,8 @@ export async function getBlockchainStats(): Promise<BlockchainStats> {
 // Add this function to export network information
 export async function getNetworkInfo(): Promise<NetworkInfo> {
   try {
-    // Use command() for RPC calls not defined in the type definitions
-    const networkInfo = await client.command('getnetworkinfo') as NetworkInfo;
+    // Use RPC call to get network info
+    const networkInfo = await rpc.getNetworkInfo() as NetworkInfo;
     return networkInfo;
   } catch (error) {
     console.error('Error fetching network info:', error);
@@ -506,7 +516,7 @@ export async function getBlockhashByHeight(height: number): Promise<string> {
     }
     
     // Fallback to RPC call if not found in database
-    const blockHash = await client.getBlockHash(height);
+    const blockHash = await rpc.getBlockHash(height);
     return blockHash;
   } catch (error) {
     console.error(`Error fetching block hash for height ${height}:`, error);
@@ -539,7 +549,7 @@ export async function getBlockByHash(hash: string) {
     }
     
     // If not found in DB, try to get from node directly
-    const blockData = await client.getBlock(hash, 2) as Block; // Verbose with tx data
+    const blockData = await rpc.getBlock(hash, 2) as any; // Verbose with tx data
     
     // Process and return block data - same formatting as in getBlock function
     return {
@@ -554,8 +564,8 @@ export async function getBlockByHash(hash: string) {
       merkle: blockData.merkleroot,
       prev_hash: blockData.previousblockhash,
       next_hash: blockData.nextblockhash,
-      txs: blockData.tx.map((tx) => typeof tx === 'string' ? tx : tx.txid),
-      transactions: blockData.tx.map((tx): FormattedTransaction => {
+      txs: blockData.tx.map((tx: any) => typeof tx === 'string' ? tx : tx.txid),
+      transactions: blockData.tx.map((tx: any): FormattedTransaction => {
         if (typeof tx === 'string') {
           return { txid: tx, vin: [], vout: [], total: 0 };
         }
@@ -602,7 +612,7 @@ export async function getRawTransaction(txid: string, decrypt: boolean = false) 
     
     if (decrypt) {
       // Get decoded transaction (verbose=true)
-      const rawResponse = await client.getRawTransaction(txid, true) as RPCTransaction;
+      const rawResponse = await rpc.getRawTransaction(txid, true) as RPCTransaction;
       
       // Now TypeScript knows this is an object
       txData = rawResponse;
@@ -625,7 +635,7 @@ export async function getRawTransaction(txid: string, decrypt: boolean = false) 
       }
     } else {
       // Get raw hex data (verbose=false)
-      txData = await client.getRawTransaction(txid, false) as string;
+      txData = await rpc.getRawTransaction(txid, false) as string;
     }
     
     return txData;

@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 
 export interface Block {
-  _id: ObjectId;
+  _id?: ObjectId;
   hash: string;
   height: number;
   confirmations: number;
@@ -18,12 +18,13 @@ export interface Block {
 }
 
 export interface Transaction {
-  _id: ObjectId;
+  _id?: ObjectId;
   txid: string;
   blockindex: number;
   blockhash: string;
   timestamp: number;
   total: number;
+  fee?: number;
   vout: TransactionOutput[];
   vin: TransactionInput[];
 }
