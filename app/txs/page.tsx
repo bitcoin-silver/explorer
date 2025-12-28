@@ -52,13 +52,12 @@ async function getTransactions(page: number = 1, limit: number = 25) {
   };
 }
 
-// @ts-expect-error - Next.js 15 type issue with page props
-export default async function TransactionsPage(props) {
-  // Get the searchParams from props
-  const { searchParams = {} } = props;
-  
+export default async function TransactionsPage(props: { searchParams?: Promise<{ page?: string }> }) {
+  // Get the searchParams from props and await it (Next.js 16+)
+  const searchParams = await props.searchParams;
+
   // Parse query parameters with fallbacks
-  const page = parseInt(searchParams?.page as string) || 1;
+  const page = parseInt(searchParams?.page || "1", 10) || 1;
   
   // Get transactions with pagination
   const { transactions, pagination } = await getTransactions(page);
@@ -133,12 +132,13 @@ export default async function TransactionsPage(props) {
             <div className="flex items-center justify-center space-x-2 mt-6">
               {/* First page button */}
               {page > 1 ? (
-                <Link href={createPageUrl(1)}>
-                  <Button variant="outline" size="sm">
-                    <ChevronLeft className="h-4 w-4" />
-                    <ChevronLeft className="h-4 w-4 -ml-2" />
-                  </Button>
-                </Link>
+                <a
+                  href={createPageUrl(1)}
+                  className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 rounded-md px-2.5"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className="h-4 w-4 -ml-2" />
+                </a>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   <ChevronLeft className="h-4 w-4" />
@@ -148,12 +148,13 @@ export default async function TransactionsPage(props) {
 
               {/* Previous button */}
               {page > 1 ? (
-                <Link href={createPageUrl(page - 1)}>
-                  <Button variant="outline" size="sm">
-                    <ChevronLeft className="h-4 w-4 mr-1" />
-                    Prev
-                  </Button>
-                </Link>
+                <a
+                  href={createPageUrl(page - 1)}
+                  className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 rounded-md gap-1.5 px-3"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Prev
+                </a>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   <ChevronLeft className="h-4 w-4 mr-1" />
@@ -167,12 +168,13 @@ export default async function TransactionsPage(props) {
 
               {/* Next button */}
               {page < pagination.totalPages ? (
-                <Link href={createPageUrl(page + 1)}>
-                  <Button variant="outline" size="sm">
-                    Next
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </Link>
+                <a
+                  href={createPageUrl(page + 1)}
+                  className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 rounded-md gap-1.5 px-3"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </a>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   Next
@@ -182,12 +184,13 @@ export default async function TransactionsPage(props) {
 
               {/* Last page button */}
               {page < pagination.totalPages ? (
-                <Link href={createPageUrl(pagination.totalPages)}>
-                  <Button variant="outline" size="sm">
-                    <ChevronRight className="h-4 w-4" />
-                    <ChevronRight className="h-4 w-4 -ml-2" />
-                  </Button>
-                </Link>
+                <a
+                  href={createPageUrl(pagination.totalPages)}
+                  className="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground h-8 rounded-md px-2.5"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className="h-4 w-4 -ml-2" />
+                </a>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   <ChevronRight className="h-4 w-4" />
