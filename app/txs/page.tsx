@@ -133,61 +133,61 @@ export default async function TransactionsPage(props) {
             <div className="flex items-center justify-center space-x-2 mt-6">
               {/* First page button */}
               {page > 1 ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(1)}>
+                <Link href={createPageUrl(1)}>
+                  <Button variant="outline" size="sm">
                     <ChevronLeft className="h-4 w-4" />
                     <ChevronLeft className="h-4 w-4 -ml-2" />
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   <ChevronLeft className="h-4 w-4" />
                   <ChevronLeft className="h-4 w-4 -ml-2" />
                 </Button>
               )}
-              
+
               {/* Previous button */}
               {page > 1 ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(page - 1)}>
+                <Link href={createPageUrl(page - 1)}>
+                  <Button variant="outline" size="sm">
                     <ChevronLeft className="h-4 w-4 mr-1" />
                     Prev
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Prev
                 </Button>
               )}
-              
+
               <div className="text-sm">
                 Page {page} of {pagination.totalPages}
               </div>
-              
+
               {/* Next button */}
               {page < pagination.totalPages ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(page + 1)}>
+                <Link href={createPageUrl(page + 1)}>
+                  <Button variant="outline" size="sm">
                     Next
                     <ChevronRight className="h-4 w-4 ml-1" />
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   Next
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               )}
-              
+
               {/* Last page button */}
               {page < pagination.totalPages ? (
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={createPageUrl(pagination.totalPages)}>
+                <Link href={createPageUrl(pagination.totalPages)}>
+                  <Button variant="outline" size="sm">
                     <ChevronRight className="h-4 w-4" />
                     <ChevronRight className="h-4 w-4 -ml-2" />
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               ) : (
                 <Button variant="outline" size="sm" disabled>
                   <ChevronRight className="h-4 w-4" />
