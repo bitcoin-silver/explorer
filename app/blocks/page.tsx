@@ -108,53 +108,69 @@ export default async function BlocksPage({ searchParams }: { searchParams?: { pa
 
           {pagination.totalPages > 1 && (
             <div className="flex items-center justify-center space-x-2 mt-6">
-              <Link href={createPageUrl(1)}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={isFirst ? "opacity-50 cursor-not-allowed" : ""}
-                >
+              {/* First page button */}
+              {page > 1 ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={createPageUrl(1)}>
+                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-4 w-4 -ml-2" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
                   <ChevronLeft className="h-4 w-4" />
                   <ChevronLeft className="h-4 w-4 -ml-2" />
                 </Button>
-              </Link>
+              )}
 
-              <Link href={createPageUrl(Math.max(page - 1, 1))}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={isFirst ? "opacity-50 cursor-not-allowed" : ""}
-                >
+              {/* Previous button */}
+              {page > 1 ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={createPageUrl(page - 1)}>
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Prev
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Prev
                 </Button>
-              </Link>
+              )}
 
               <div className="text-sm">
                 Page {page} of {pagination.totalPages}
               </div>
 
-              <Link href={createPageUrl(Math.min(page + 1, pagination.totalPages))}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={isLast ? "opacity-50 cursor-not-allowed" : ""}
-                >
+              {/* Next button */}
+              {page < pagination.totalPages ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={createPageUrl(page + 1)}>
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
                   Next
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
-              </Link>
+              )}
 
-              <Link href={createPageUrl(pagination.totalPages)}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={isLast ? "opacity-50 cursor-not-allowed" : ""}
-                >
+              {/* Last page button */}
+              {page < pagination.totalPages ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={createPageUrl(pagination.totalPages)}>
+                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4 -ml-2" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled>
                   <ChevronRight className="h-4 w-4" />
                   <ChevronRight className="h-4 w-4 -ml-2" />
                 </Button>
-              </Link>
+              )}
             </div>
           )}
         </CardContent>

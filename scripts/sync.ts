@@ -72,7 +72,7 @@ async function updateAddressesFromTx(db: Db, txid:string, inputs:any[], outputs:
   for(const out of outputs){
     if(out.addresses==='unknown') continue;
     impacts[out.addresses]??={sent:0,received:0};
-    if(!inputAddressesSet.has(out.addresses)) impacts[out.addresses].received+=out.amount;
+    impacts[out.addresses].received+=out.amount; // Count ALL outputs including change
     addresstxsOps.push({insertOne:{document:{a_id:out.addresses,txid,blockindex:blockHeight,amount:out.amount,type:'vout'}}});
   }
 
@@ -125,16 +125,21 @@ async function rebuildAddressBalances(db: Db, specific?: string){
   const addrs = await db.collection('addresses').find(query).project({ a_id: 1 }).toArray();
   for (const { a_id } of addrs){
     const txs = await db.collection('addresstxs').find({ a_id }).toArray();
-    const byTx: Record<string, { vins: any[]; vouts: any[] }> = {};
-    for (const e of txs){ byTx[e.txid] ??= { vins: [], vouts: [] }; if(e.type==='vin') byTx[e.txid].vins.push(e); else byTx[e.txid].vouts.push(e); }
     let balance=0, received=0, sent=0;
-    for(const e of txs) balance+=Number(e.amount||0);
-    for(const [_txid, bucket] of Object.entries(byTx)){
-      const voutSum = bucket.vouts.reduce((s,v)=>s+Number(v.amount||0),0);
-      const vinSumPositive = bucket.vins.reduce((s,v)=>s+Math.abs(Number(v.amount||0)),0);
-      const changeToSelf = bucket.vouts.reduce((s,v)=>s+Number(v.amount||0),0);
-      if(bucket.vins.length>0) sent += Math.max(0, vinSumPositive - changeToSelf); else received += voutSum;
+
+    // Calculate balance as sum of all transaction amounts (positive + negative)
+    for(const e of txs) {
+      const amount = Number(e.amount||0);
+      balance += amount;
+
+      // Track received (positive amounts = vouts) and sent (negative amounts = vins)
+      if(amount > 0) {
+        received += amount;
+      } else if(amount < 0) {
+        sent += Math.abs(amount);
+      }
     }
+
     await db.collection('addresses').updateOne({ a_id },{ $set:{ balance, received, sent }},{upsert:true });
   }
 }
