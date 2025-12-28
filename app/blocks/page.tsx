@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   description: `Browse all blocks on the ${process.env.NEXT_PUBLIC_COIN_NAME} blockchain`,
 };
 
-export const revalidate = 0; // Immer aktuell
+export const revalidate = 0;
 
 interface Pagination {
   page: number;
@@ -33,7 +33,6 @@ interface Pagination {
 async function getBlocks(page: number = 1, limit: number = 25) {
   const client = await clientPromise;
   const db = client.db();
-
   const skip = (page - 1) * limit;
 
   const totalItems = await db.collection("blocks").countDocuments();
@@ -55,6 +54,9 @@ export default async function BlocksPage({ searchParams }: { searchParams?: { pa
   const { blocks, pagination } = await getBlocks(page);
 
   const createPageUrl = (pageNum: number) => `/blocks?page=${pageNum}`;
+
+  const isFirst = page === 1;
+  const isLast = page === pagination.totalPages;
 
   return (
     <div className="space-y-6">
@@ -104,18 +106,25 @@ export default async function BlocksPage({ searchParams }: { searchParams?: { pa
             </TableBody>
           </Table>
 
-          {/* Pagination */}
           {pagination.totalPages > 1 && (
             <div className="flex items-center justify-center space-x-2 mt-6">
               <Link href={createPageUrl(1)}>
-                <Button variant="outline" size="sm" disabled={page === 1}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={isFirst ? "opacity-50 cursor-not-allowed" : ""}
+                >
                   <ChevronLeft className="h-4 w-4" />
                   <ChevronLeft className="h-4 w-4 -ml-2" />
                 </Button>
               </Link>
 
               <Link href={createPageUrl(Math.max(page - 1, 1))}>
-                <Button variant="outline" size="sm" disabled={page === 1}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={isFirst ? "opacity-50 cursor-not-allowed" : ""}
+                >
                   <ChevronLeft className="h-4 w-4 mr-1" />
                   Prev
                 </Button>
@@ -126,14 +135,22 @@ export default async function BlocksPage({ searchParams }: { searchParams?: { pa
               </div>
 
               <Link href={createPageUrl(Math.min(page + 1, pagination.totalPages))}>
-                <Button variant="outline" size="sm" disabled={page === pagination.totalPages}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={isLast ? "opacity-50 cursor-not-allowed" : ""}
+                >
                   Next
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
               </Link>
 
               <Link href={createPageUrl(pagination.totalPages)}>
-                <Button variant="outline" size="sm" disabled={page === pagination.totalPages}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={isLast ? "opacity-50 cursor-not-allowed" : ""}
+                >
                   <ChevronRight className="h-4 w-4" />
                   <ChevronRight className="h-4 w-4 -ml-2" />
                 </Button>

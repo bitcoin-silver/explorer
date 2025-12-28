@@ -26,50 +26,17 @@ function extractAddress(vout: any): string {
   if (spk.address) return spk.address;
   return `script:${spk.type||'unknown'}${(spk.hex||'').slice(0,12)}`;
 }
+
 function calculateHashrate(diff: number) { return diff * 2**32 / 60; }
-
-async function updateBlockchain(db: Db, start: number, end: number) {
-  const BATCH = 10;
-  for (let h=start; h<=end; h+=BATCH) {
-    const endH = Math.min(h+BATCH-1,end);
-    for (let height=h; height<=endH; height++) {
-      try {
-        const hash = await rpc.getBlockHash(height);
-        if(await db.collection('blocks').findOne({ hash })) continue;
-        const block = await rpc.getBlock(hash,2);
-        await processBlock(db, block);
-      } catch(e){ console.error(`Block ${height} error:`,e); throw e; }
-    }
-  }
-  await updateStats(db);
-}
-
-async function processBlock(db: Db, block: any) {
-  let total=0, txids:string[]=[];
-  for(const tx of block.tx) {
-    const fullTx = typeof tx==='string'? await rpc.getRawTransaction(tx,true) : tx;
-    txids.push(fullTx.txid);
-    total += fullTx.vout.reduce((s: number,v: { value: any; })=>s+Number(v.value),0);
-    await processTransaction(db, fullTx, block);
-  }
-  await db.collection<Omit<DBBlock,'_id'>>('blocks').insertOne({
-    hash:block.hash,height:block.height,confirmations:block.confirmations,size:block.size,
-    bits:block.bits,nonce:block.nonce,timestamp:block.time,difficulty:block.difficulty,
-    merkle:block.merkleroot,prev_hash:block.previousblockhash,next_hash:block.nextblockhash,
-    txs:txids,total
-  });
-}
 
 async function processTransaction(db: Db, tx: any, block: any) {
   if(await db.collection('txs').findOne({ txid: tx.txid })) return;
 
-  const inputs:any[] = [];
-  for(const vin of tx.vin) {
-    if(vin.coinbase) { inputs.push({ addresses:'coinbase',amount:0 }); continue; }
-    if(!vin.txid || vin.vout==null) { inputs.push({addresses:'unknown',amount:0}); continue; }
-
-    let vinTx:any=null;
-    for(let i=0;i<3;i++){ try{ vinTx=await rpc.getRawTransaction(vin.txid,true); break;}catch(e){ if(i===2) throw e; await new Promise(r=>setTimeout(r,500)); } }
+  const inputs: any[] = [];
+  for(const vin of tx.vin){
+    if(vin.coinbase){ inputs.push({ addresses:'coinbase',amount:0 }); continue; }
+    if(!vin.txid || vin.vout==null){ inputs.push({addresses:'unknown',amount:0}); continue; }
+    const vinTx = await rpc.getRawTransaction(vin.txid,true);
     const out = vinTx?.vout[vin.vout];
     inputs.push({ addresses: out? extractAddress(out) : 'script:unknown', amount: out? Number(out.value):0 });
   }
@@ -125,42 +92,60 @@ async function updateAddressesFromTx(db: Db, txid:string, inputs:any[], outputs:
   for(const c of chunk(addressesOps,500)){ try{ await db.collection('addresses').bulkWrite(c,{ordered:false}); } catch(e){ console.error(e);} }
 }
 
-async function rebuildAddressBalances(db: Db, specific?: string) {
+async function processBlock(db: Db, block: any){
+  let total=0, txids:string[]=[];
+  for(const tx of block.tx){
+    const fullTx = typeof tx==='string'? await rpc.getRawTransaction(tx,true) : tx;
+    txids.push(fullTx.txid);
+    total += fullTx.vout.reduce((s: number,v: { value: any; })=>s+Number(v.value),0);
+    await processTransaction(db, fullTx, block);
+  }
+  await db.collection<Omit<DBBlock,'_id'>>('blocks').insertOne({
+    hash:block.hash,height:block.height,confirmations:block.confirmations,size:block.size,
+    bits:block.bits,nonce:block.nonce,timestamp:block.time,difficulty:block.difficulty,
+    merkle:block.merkleroot,prev_hash:block.previousblockhash,next_hash:block.nextblockhash,
+    txs:txids,total
+  });
+}
+
+async function updateBlockchain(db: Db, start: number, end: number){
+  for(let height=start; height<=end; height++){
+    try{
+      const hash = await rpc.getBlockHash(height);
+      if(await db.collection('blocks').findOne({ hash })) continue;
+      const block = await rpc.getBlock(hash,2);
+      await processBlock(db, block);
+    }catch(e){ console.error(`Block ${height} error:`,e); throw e; }
+  }
+  await updateStats(db);
+}
+
+async function rebuildAddressBalances(db: Db, specific?: string){
   const query = specific ? { a_id: specific } : {};
   const addrs = await db.collection('addresses').find(query).project({ a_id: 1 }).toArray();
-
-  for (const { a_id } of addrs) {
+  for (const { a_id } of addrs){
     const txs = await db.collection('addresstxs').find({ a_id }).toArray();
     const byTx: Record<string, { vins: any[]; vouts: any[] }> = {};
-    for (const e of txs) { byTx[e.txid] ??= { vins: [], vouts: [] }; if (e.type === 'vin') byTx[e.txid].vins.push(e); else byTx[e.txid].vouts.push(e); }
-
-    let balance = 0, received = 0, sent = 0;
-    for (const e of txs) balance += Number(e.amount || 0);
-
-    for (const [_txid, bucket] of Object.entries(byTx)) {
-      const voutSum = bucket.vouts.reduce((s, v) => s + Number(v.amount || 0), 0);
-      const vinSumPositive = bucket.vins.reduce((s, v) => s + Math.abs(Number(v.amount || 0)), 0);
-      const changeToSelf = bucket.vouts.reduce((s, v) => s + Number(v.amount || 0), 0);
-
-      if (bucket.vins.length > 0) sent += Math.max(0, vinSumPositive - changeToSelf);
-      else received += voutSum;
+    for (const e of txs){ byTx[e.txid] ??= { vins: [], vouts: [] }; if(e.type==='vin') byTx[e.txid].vins.push(e); else byTx[e.txid].vouts.push(e); }
+    let balance=0, received=0, sent=0;
+    for(const e of txs) balance+=Number(e.amount||0);
+    for(const [_txid, bucket] of Object.entries(byTx)){
+      const voutSum = bucket.vouts.reduce((s,v)=>s+Number(v.amount||0),0);
+      const vinSumPositive = bucket.vins.reduce((s,v)=>s+Math.abs(Number(v.amount||0)),0);
+      const changeToSelf = bucket.vouts.reduce((s,v)=>s+Number(v.amount||0),0);
+      if(bucket.vins.length>0) sent += Math.max(0, vinSumPositive - changeToSelf); else received += voutSum;
     }
-
-    await db.collection('addresses').updateOne({ a_id }, { $set: { balance, received, sent } }, { upsert: true });
-    console.log(`Address ${a_id} recalculated: balance=${balance}, received=${received}, sent=${sent}`);
+    await db.collection('addresses').updateOne({ a_id },{ $set:{ balance, received, sent }},{upsert:true });
   }
 }
 
-async function updateRichlist(db:Db){
+async function updateRichlist(db: Db){
   const top = await db.collection('addresses').find({balance:{$gt:0}}).sort({balance:-1}).limit(100).toArray();
   const richlist: RichlistEntry[] = top.map(a=>({address:a.a_id,balance:a.balance,received:a.received}));
-  await db.collection('richlist').updateOne(
-    {coin:process.env.NEXT_PUBLIC_COIN_SYMBOL},
-    {$set:{balance:richlist,received:richlist}}, {upsert:true}
-  );
+  await db.collection('richlist').updateOne({coin:process.env.NEXT_PUBLIC_COIN_SYMBOL},{$set:{balance:richlist,received:richlist}},{upsert:true});
 }
 
-async function updateStats(db:Db){
+async function updateStats(db: Db){
   const info = await rpc.getBlockchainInfo();
   const net = await rpc.getNetworkInfo();
   const supply = await db.collection('txs').aggregate([
@@ -168,12 +153,7 @@ async function updateStats(db:Db){
     {$addFields:{totalNum:{$convert:{input:"$total",to:"double",onError:0,onNull:0}}}},
     {$group:{_id:null,totalSupply:{$sum:"$totalNum"}}}
   ]).toArray();
-  await db.collection('stats').updateOne(
-    {coin:process.env.NEXT_PUBLIC_COIN_SYMBOL},
-    {$set:{coin:process.env.NEXT_PUBLIC_COIN_SYMBOL,count:info.blocks,last:info.blocks,supply:supply[0]?.totalSupply||0,
-           connections:net.connections,difficulty:info.difficulty,hashrate:calculateHashrate(info.difficulty)}},
-    {upsert:true}
-  );
+  await db.collection('stats').updateOne({coin:process.env.NEXT_PUBLIC_COIN_SYMBOL},{$set:{coin:process.env.NEXT_PUBLIC_COIN_SYMBOL,count:info.blocks,last:info.blocks,supply:supply[0]?.totalSupply||0,connections:net.connections,difficulty:info.difficulty,hashrate:calculateHashrate(info.difficulty)}},{upsert:true});
 }
 
 isLocked(locked=>{
@@ -191,7 +171,7 @@ isLocked(locked=>{
           db.collection('blocks').deleteMany({}),
           db.collection('addresses').deleteMany({}),
           db.collection('addresstxs').deleteMany({}),
-          db.collection('richlist').updateOne({coin:process.env.NEXT_PUBLIC_COIN_SYMBOL},{$set:{balance:[],received:[]}}, {upsert:true})
+          db.collection('richlist').updateOne({coin:process.env.NEXT_PUBLIC_COIN_SYMBOL},{$set:{balance:[],received:[]}},{upsert:true})
         ]);
         await updateBlockchain(db,1,latest);
         await updateRichlist(db);

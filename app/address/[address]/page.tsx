@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { CopyButton } from '@/components/copy-button';
 import { FilterControls } from '@/components/filter-controls';
-import Image from 'next/image';
 import { KnownAddressBadge } from "@/components/known-address-badge";
 
 // Define interfaces
