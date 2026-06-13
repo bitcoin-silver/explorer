@@ -56,5 +56,6 @@ export const rpc = {
   getNetworkInfo: () => rpcCall('getnetworkinfo'),
   getPeerInfo: () => rpcCall('getpeerinfo'),
   getNetworkHashPs: () => rpcCall('getnetworkhashps'),
+  getMempool: (verbose: boolean = false) => rpcCall('getrawmempool', [verbose]),
   command: (method: string, params?: any[]) => rpcCall(method, params || [])
 };

@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "clean:next-types": "node -e \"const fs = require('fs'); fs.rmSync('.next/types', { recursive: true, force: true }); fs.rmSync('.next/dev/types', { recursive: true, force: true });\"",
+    "typecheck": "npm run clean:next-types && tsc --noEmit",
     "init-db": "tsx scripts/init-db.ts",
     "sync:index:update": "tsx scripts/sync.ts index update",
     "sync:index:check": "tsx scripts/sync.ts index check",
