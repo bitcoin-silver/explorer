@@ -200,7 +200,8 @@ export async function getBlock(height: number) {
         
         const outputs: TransactionOutput[] = rpcTx.vout.map((output: RPCTransactionOutput) => ({
           addresses: output.scriptPubKey.addresses?.[0] || 'unknown',
-          amount: output.value
+          amount: output.value,
+          scriptPubKey: output.scriptPubKey
         }));
         
         const total = outputs.reduce((sum: number, output: TransactionOutput) => sum + output.amount, 0);
@@ -242,10 +243,29 @@ export async function getTransaction(txid: string) {
       // Calculate current confirmations based on the latest blockchain height
       const blockindex = Number(tx.blockindex); // Ensure it's a number
       const confirmations = blockindex ? (currentHeight - blockindex + 1) : 0;
-      
+
+      // OP_RETURN outputs and the coinbase scriptSig are stripped out during sync,
+      // so fetch them live from the node instead of resyncing/backfilling history.
+      let opReturns: { asm?: string; hex?: string }[] = [];
+      let coinbaseHex: string | undefined;
+      try {
+        const rawTx = await rpc.getRawTransaction(txid, true);
+        if (rawTx && typeof rawTx !== 'string') {
+          const rpcTx = rawTx as RPCTransaction;
+          opReturns = rpcTx.vout
+            .filter((v) => v.scriptPubKey?.type === 'nulldata')
+            .map((v) => ({ asm: v.scriptPubKey.asm, hex: v.scriptPubKey.hex }));
+          coinbaseHex = rpcTx.vin.find((v) => v.coinbase)?.coinbase;
+        }
+      } catch (e) {
+        console.error(`Error fetching OP_RETURN/coinbase data for ${txid}:`, e);
+      }
+
       return {
         ...tx,
-        confirmations: Math.max(confirmations, 0) // Ensure we never show negative confirmations
+        confirmations: Math.max(confirmations, 0), // Ensure we never show negative confirmations
+        opReturns,
+        coinbaseHex
       };
     }
     
@@ -282,10 +302,17 @@ export async function getTransaction(txid: string) {
     }));
     
     const outputs = txData.vout.map((output: any) => ({
-      addresses: output.scriptPubKey.addresses?.[0] || 'unknown',
-      amount: Number(output.value) || 0
+      addresses: output.scriptPubKey.addresses?.[0] || "unknown",
+      amount: Number(output.value) || 0,
+      scriptPubKey: output.scriptPubKey,
     }));
-    
+
+    const opReturns = txData.vout
+      .filter((v: any) => v.scriptPubKey?.type === 'nulldata')
+      .map((v: any) => ({ asm: v.scriptPubKey.asm, hex: v.scriptPubKey.hex }));
+
+    const coinbaseHex = txData.vin.find((v: any) => v.coinbase)?.coinbase;
+
     const total = outputs.reduce((sum: number, output: any) => sum + output.amount, 0);
     
     // Get block info if available
@@ -306,7 +333,9 @@ export async function getTransaction(txid: string) {
       confirmations: txData.confirmations || 0,
       size: txData.size || 0,
       version: txData.version || 0,
-      locktime: txData.locktime || 0
+      locktime: txData.locktime || 0,
+      opReturns,
+      coinbaseHex
     };
   } catch (error) {
     console.error('Error fetching transaction:', error);
